@@ -11,6 +11,7 @@ using System.Xml;
 using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
+using McTools.Xrm.Connection;
 /// <summary>
 /// Op2 test
 /// King Ohad Perets 
@@ -27,6 +28,18 @@ namespace GenerateFiltered_2010Version
     /// </summary>
     public partial class Form1 : Form
     {
+        /// <summary>
+        /// Connection control
+        /// </summary>
+        CrmConnectionStatusBar ccsb;
+
+        /// <summary>
+        /// Connection manager
+        /// </summary>
+        McTools.Xrm.Connection.ConnectionManager cManager;
+
+        public IOrganizationService _service;
+
         string[] filenames = { };
         string organizationUrl = string.Empty;
         const string configFile = "Configurations.xml", filterFile = "filter.xml",
@@ -35,13 +48,45 @@ namespace GenerateFiltered_2010Version
         /// <summary>
         /// Stores the organization service proxy.
         /// </summary>
-        IOrganizationService _serviceProxy;
         public Form1()
         {
             InitializeComponent();
+
+            this.cManager = new McTools.Xrm.Connection.ConnectionManager(this);
+            this.cManager.ConnectionFailed += CManager_ConnectionFailed;
+            this.cManager.ConnectionSucceed += CManager_ConnectionSucceed;
+            this.cManager.StepChanged += CManager_StepChanged;
+            // Instantiate and add the connection control to the form
+            ccsb = new CrmConnectionStatusBar(this.cManager);
+            this.Controls.Add(ccsb);
+
             ReadConfigurations();
         }
+        private void CManager_StepChanged(object sender, StepChangedEventArgs e)
+        {
+            this.ccsb.SetMessage(e.CurrentStep);
+        }
 
+        private void CManager_ConnectionSucceed(object sender, ConnectionSucceedEventArgs e)
+        {
+            // Store connection Organization Service
+            this._service = e.OrganizationService;
+
+            // Displays connection status
+            this.ccsb.SetConnectionStatus(true, e.ConnectionDetail);
+
+            // Clear the current action message
+            this.ccsb.SetMessage(string.Empty);
+
+            ((Microsoft.Xrm.Sdk.Client.OrganizationServiceProxy)this._service).Timeout = TimeSpan.FromMinutes(15);
+            
+            
+        }
+
+        private void CManager_ConnectionFailed(object sender, ConnectionFailedEventArgs e)
+        {
+            MessageBox.Show(string.Format("Connection Failed: {0}", e.FailureReason));
+        }
         private void ReadConfigurations()
         {
             if (File.Exists(configFile))
@@ -307,14 +352,14 @@ namespace GenerateFiltered_2010Version
                                    .Cast<Match>()
                                    .Select(match => match.Groups[1].Value.Replace("public partial class ", string.Empty))
                                    .ToArray();
-            _serviceProxy = ConnectionManager.GetOrganizationProxy(organizationUrl);
+            _service = ConnectionManager.GetOrganizationProxy(organizationUrl);
             RetrieveAllEntitiesRequest request = new RetrieveAllEntitiesRequest()
             {
                 EntityFilters = EntityFilters.Entity,
                 RetrieveAsIfPublished = true,
             };
             // Retrieve the MetaData.
-            RetrieveAllEntitiesResponse response = (RetrieveAllEntitiesResponse)_serviceProxy.Execute(request);
+            RetrieveAllEntitiesResponse response = (RetrieveAllEntitiesResponse)_service.Execute(request);
             List<EntityMetadata> listEntityMetaData = response.EntityMetadata.OrderBy(s => s.SchemaName).ToList();
             foreach (var item in listEntityMetaData)
             {
